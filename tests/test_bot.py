@@ -1,12 +1,14 @@
 import os
 from http import HTTPStatus
+from urllib.error import HTTPError
 
 import requests
 import telegram
 import utils
 
 
-class MockResponseGET:
+class MockResponseGET(requests.Response):
+    reason = 'wouldnt you like to know'
 
     def __init__(self, url, params=None, random_timestamp=None,
                  current_timestamp=None, http_status=HTTPStatus.OK, **kwargs):
@@ -51,6 +53,10 @@ class MockResponseGET:
             "current_date": self.random_timestamp
         }
         return data
+
+    def raise_for_status(self):
+        return super().raise_for_status()
+
 
 
 class MockTelegramBot:

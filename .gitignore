@@ -150,3 +150,7 @@ static/
 posts/static/
 media/
 
+*.log
+
+tests/
+venv/
