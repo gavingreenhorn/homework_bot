@@ -121,16 +121,15 @@ def main():
         raise exceptions.TokensMissingError(message)
 
     while True:
+        message = None
         try:
             response = get_api_answer(current_timestamp)
             logger.info(response)
             homeworks, current_timestamp = check_response(response)
             if not homeworks:
-                message = 'No updates'
                 continue
             homework = max(homeworks, key=lambda x: x.get('id'))
             message = parse_status(homework)
-            print(message)
         except requests.exceptions.ConnectionError as error:
             message = 'Network error occured: (%s)' % str(error)
             logger.error(message)
@@ -141,7 +140,8 @@ def main():
             message = error.message
             logger.error(message)
         finally:
-            send_message(bot, message)
+            if message:
+                send_message(bot, message)
             time.sleep(RETRY_TIME)
 
 
