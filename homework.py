@@ -14,7 +14,7 @@ load_dotenv()
 
 PRACTICUM_TOKEN = os.getenv('YP_TOKEN')
 TELEGRAM_TOKEN = os.getenv('TG_TOKEN')
-TELEGRAM_CHAT_ID = '304010818'
+TELEGRAM_CHAT_ID = os.getenv('CHAD_ID')
 
 RETRY_TIME = 600
 ENDPOINT = 'https://practicum.yandex.ru/api/user_api/homework_statuses/'
@@ -69,7 +69,8 @@ def get_api_answer(current_timestamp):
     timestamp = current_timestamp or int(time.time())
     payload = {'from_date': timestamp}
     response = requests.get(url=ENDPOINT, headers=HEADERS, params=payload)
-    response.raise_for_status()
+    if response.status_code != 200:
+        raise exceptions.MoCk_HtTp_ErRoR
     return response.json()
 
 
