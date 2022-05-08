@@ -154,3 +154,6 @@ media/
 
 tests/
 venv/
+
+mock_tests.py
+exceptions.py

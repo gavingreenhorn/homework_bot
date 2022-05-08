@@ -1,13 +1,11 @@
-import os
-import sys
-import time
+from http import HTTPStatus
 import logging
+import os
+import time
 
-import requests
 from dotenv import load_dotenv
+import requests
 from telegram import Bot
-
-import exceptions
 
 
 load_dotenv()
@@ -20,39 +18,35 @@ RETRY_TIME = 600
 ENDPOINT = 'https://practicum.yandex.ru/api/user_api/homework_statuses/'
 HEADERS = {'Authorization': f'OAuth {PRACTICUM_TOKEN}'}
 
+TYPE_ERROR_MSG = '{obj} is a {type}, when {expected_type} was expected'
+KEY_ERROR_MSG = '{obj} does not have a key {key}'
+TOKEN_MISSING_MSG = '{0} is missing'
+CONNECTION_ERROR_MSG = ('Connection error occured while trying to '
+                        'connect to {endpoint}:\n {error_data}')
+HTTP_ERROR_MSG = ('The server responded with status code [{response_code}]\n'
+                  'The following requst was sent:\n')
+HTTP_DENIED_MSG = ('The server refused to provide requested data '
+                   'with an answer [{code}]\n'
+                   'It might be due to the following errors: '
+                   '{errors}\n')
 
-HOMEWORK_STATUSES = {
+HOMEWORK_VERDICTS = {
     'approved': 'Работа проверена: ревьюеру всё понравилось. Ура!',
     'reviewing': 'Работа взята на проверку ревьюером.',
     'rejected': 'Работа проверена: у ревьюера есть замечания.'
 }
 
-
-def get_logger(logger_name):
-    """Sets up a logger for when the module is called directly."""
-    logger = logging.getLogger(logger_name)
-    logger.setLevel('DEBUG')
-
-    formatter = logging.Formatter(
-        fmt='%(asctime)s.%(msecs)03d\t%(levelname)s\t%(message)s',
-        datefmt=r'%d/%m %H:%M:%S'
-    )
-
-    info_handler = logging.FileHandler(
-        filename='mainlog.log',
-        mode='w',
-        encoding='utf-8'
-    )
-    info_handler.setLevel('INFO')
-    info_handler.setFormatter(formatter)
-    exc_handler = logging.StreamHandler(stream=sys.stderr)
-    exc_handler.setLevel('ERROR')
-    exc_handler.setFormatter(formatter)
-
-    logger.addHandler(info_handler)
-    logger.addHandler(exc_handler)
-
-    return logger
+logname = __file__ + '.log'
+logging.basicConfig(
+    level=logging.INFO,
+    filename=logname,
+    filemode='w',
+    format=(
+        '%(asctime)s.%(msecs)03d\t%(levelname)s\t'
+        '%(name)s :: %(funcName)s :: line %(lineno)s\t%(message)s'
+    ),
+    datefmt=r'%d.%m %H:%M:%S'
+)
 
 
 def send_message(bot, message):
@@ -61,92 +55,130 @@ def send_message(bot, message):
         chat_id=TELEGRAM_CHAT_ID,
         text=message
     )
-    logger.info(api_response)
+    logging.info(api_response)
 
 
 def get_api_answer(current_timestamp):
     """Query the API for homework updates."""
-    timestamp = current_timestamp or int(time.time())
-    payload = {'from_date': timestamp}
-    response = requests.get(url=ENDPOINT, headers=HEADERS, params=payload)
-    if response.status_code != 200:
-        raise exceptions.MoCk_HtTp_ErRoR
+    payload = {'from_date': current_timestamp}
+    request_data = {
+        'url': ENDPOINT,
+        'headers': HEADERS,
+        'params': payload,
+    }
+    data_as_string = '\n'.join(f'{k}: {v}' for k, v in request_data.items())
+    try:
+        response = requests.get(**request_data)
+    except requests.exceptions.ConnectionError as error:
+        raise requests.exceptions.ConnectionError(
+            CONNECTION_ERROR_MSG.format(
+                endpoint=ENDPOINT, error_data=str(error)
+            )
+        )
+    response_code = response.status_code
+    try:
+        response_data = response.json()
+    except ValueError:
+        pass
+    else:
+        if 'error' in response_data or 'code' in response_data:
+            errors = response_data.get('error')
+            code = response_data.get('code')
+            raise requests.exceptions.HTTPError(
+                HTTP_DENIED_MSG.format(
+                    code=code,
+                    errors=errors
+                )
+            )
+    if response_code != HTTPStatus.OK:
+        raise requests.exceptions.HTTPError(
+            HTTP_ERROR_MSG.format(response_code=response_code)
+            + data_as_string
+        )
     return response.json()
 
 
 def check_response(response):
     """Check that the response data is correct."""
-    try:
-        homeworks = response['homeworks']
-        current_timestamp = response['current_date']
-    except KeyError as error:
-        raise exceptions.IncorrectResponseError(
-            'Response does not contain %s' % str(error)
+    if not isinstance(response, dict):
+        raise TypeError(
+            TYPE_ERROR_MSG.format(
+                obj='"response"', type=type(response),
+                expected_type='dictionary'
+            )
         )
+    elif 'homeworks' not in response:
+        raise KeyError(
+            KEY_ERROR_MSG.format(obj='"response"', key='"homeworks"')
+        )
+    homeworks = response['homeworks']
     if not isinstance(homeworks, list):
-        raise exceptions.IncorrectResponseError('Homeworks is not a list')
-    return homeworks, current_timestamp
+        raise TypeError(
+            TYPE_ERROR_MSG.format(
+                obj='"homeworks"', type=type(homeworks),
+                expected_type='list'
+            )
+        )
+    return homeworks
 
 
 def parse_status(homework):
     """Check that homework data is complete."""
-    if isinstance(homework, list):
-        homework = homework[0]
-    try:
-        homework_status = homework['status']
-    except KeyError as error:
-        raise exceptions.IncorrectResponseError(
-            'Homework does not contain %s' % str(error)
+    status = homework.get('status')
+    name = homework['homework_name']
+    verdict = HOMEWORK_VERDICTS.get(status)
+    if status not in HOMEWORK_VERDICTS:
+        raise KeyError(
+            KEY_ERROR_MSG.format(obj='verdicts', key=status)
         )
-    homework_name = homework['homework_name']
-    verdict = HOMEWORK_STATUSES.get(homework_status)
-    if not verdict:
-        raise exceptions.UnknownReviewStatus
-    return f'Изменился статус проверки работы "{homework_name}". {verdict}'
+    return f'Изменился статус проверки работы "{name}". {verdict}'
 
 
 def check_tokens():
     """Check that all the required tokens are in place."""
-    return PRACTICUM_TOKEN and TELEGRAM_TOKEN
+    return all((PRACTICUM_TOKEN, TELEGRAM_TOKEN, TELEGRAM_CHAT_ID))
 
 
 def main():
     """Program's entry point."""
-    current_timestamp = int(time.time())
+    if not check_tokens():
+        message = 'One or more tokens are missing:\n'
+        if not PRACTICUM_TOKEN:
+            message += TOKEN_MISSING_MSG.format('practicum token')
+        elif not TELEGRAM_TOKEN:
+            message += TOKEN_MISSING_MSG.format('telegram token')
+        else:
+            message += TOKEN_MISSING_MSG.format('chat ID')
+        logging.critical(message)
+        raise NameError(message)
 
-    if check_tokens():
-        bot = Bot(token=TELEGRAM_TOKEN)
-    else:
-        message = 'One or both of the tokens missing!'
-        logger.critical(message)
-        raise exceptions.TokensMissingError(message)
+    bot = Bot(token=TELEGRAM_TOKEN)
+    last_message = ''
+    current_timestamp = int(time.time())
 
     while True:
         message = None
         try:
             response = get_api_answer(current_timestamp)
-            logger.info(response)
-            homeworks, current_timestamp = check_response(response)
+            logging.info(response)
+            homeworks = check_response(response)
+            current_timestamp = response.get('current_date', current_timestamp)
             if not homeworks:
                 continue
-            homework = max(homeworks, key=lambda x: x.get('id'))
+            homework = homeworks[0]
             message = parse_status(homework)
-        except requests.exceptions.ConnectionError as error:
-            message = 'Network error occured: (%s)' % str(error)
-            logger.error(message)
-        except requests.exceptions.HTTPError as error:
-            message = 'Unable to connect to API: (%s)' % str(error)
-            logger.error(message)
         except Exception as error:
-            message = error.message
-            logger.error(message)
+            message = str(error)
+            logging.error(message)
         finally:
-            if message:
-                send_message(bot, message)
+            if message and message != last_message:
+                last_message = message
+                try:
+                    send_message(bot, message)
+                except Exception as error:
+                    logging.exception(error)
             time.sleep(RETRY_TIME)
 
 
 if __name__ == '__main__':
-    global logger
-    logger = get_logger('your_logger')
     main()
