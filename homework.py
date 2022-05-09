@@ -15,8 +15,9 @@ load_dotenv()
 PRACTICUM_TOKEN = os.getenv('YP_TOKEN')
 TELEGRAM_TOKEN = os.getenv('TG_TOKEN')
 TELEGRAM_CHAT_ID = os.getenv('CHAD_ID')
+TOKEN_NAMES = ('PRACTICUM_TOKEN', 'TELEGRAM_TOKEN', 'TELEGRAM_CHAT_ID')
 
-RETRY_TIME = 600
+RETRY_TIME = 10
 ENDPOINT = 'https://practicum.yandex.ru/api/user_api/homework_statuses/'
 HEADERS = {'Authorization': f'OAuth {PRACTICUM_TOKEN}'}
 
@@ -58,11 +59,17 @@ HOMEWORK_VERDICTS = {
 
 def send_message(bot, message):
     """Send a message to my chat."""
-    api_response = bot.send_message(
-        chat_id=TELEGRAM_CHAT_ID,
-        text=message
-    )
-    logging.info(BOT_RESPONSE_MESSAGE.format(data=api_response))
+    try:
+        api_response = bot.send_message(
+            chat_id=TELEGRAM_CHAT_ID,
+            text=message
+        )
+    except Exception as error:
+        logging.exception(BOT_ERROR_MESSAGE.format(message=error))
+        return False
+    else:
+        logging.info(BOT_RESPONSE_MESSAGE.format(data=api_response))
+        return True
 
 
 def get_api_answer(current_timestamp):
@@ -139,8 +146,7 @@ def parse_status(homework):
 
 def check_tokens():
     """Check that all the required tokens are in place."""
-    tokens = ('PRACTICUM_TOKEN', 'TELEGRAM_TOKEN', 'TELEGRAM_CHAT_ID')
-    missing = [token for token in tokens if not globals()[token]]
+    missing = [name for name in TOKEN_NAMES if not globals()[name]]
     if missing:
         logging.critical(TOKENS_LOGGING_MESSAGE.format(tokens=missing))
         return False
@@ -156,8 +162,6 @@ def main():
     current_timestamp = int(time.time())
 
     while True:
-        message = None
-        response = None
         try:
             response = get_api_answer(current_timestamp)
             logging.debug(RESPONSE_INFO.format(response=response))
@@ -168,18 +172,16 @@ def main():
             logging.debug(VERDICT_INFO.format(verdict=message))
         except Exception as error:
             message = BASE_ERROR_MESSAGE.format(error=error)
-            logging.error(message)
+            if message != last_message and send_message(bot, message):
+                logging.error(message)
+                last_message = message
+        else:
+            if message != last_message and send_message(bot, message):
+                last_message = message
+                current_timestamp = response.get(
+                    'current_date', current_timestamp
+                )
         finally:
-            if message and message != last_message:
-                try:
-                    send_message(bot, message)
-                except Exception as error:
-                    logging.exception(BOT_ERROR_MESSAGE.format(message=error))
-                else:
-                    if response:
-                        current_timestamp = response.get(
-                            'current_date', current_timestamp)
-                    last_message = message
             time.sleep(RETRY_TIME)
 
 
