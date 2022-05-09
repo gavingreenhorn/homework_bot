@@ -149,7 +149,6 @@ def check_tokens():
 
 def main():
     """Program's entry point."""
-
     if not check_tokens():
         raise NameError(TOKENS_MISSING_MESSAGE)
     bot = Bot(token=TELEGRAM_TOKEN)
