@@ -77,7 +77,7 @@ def get_api_answer(current_timestamp):
     request_data = {
         'url': ENDPOINT,
         'headers': HEADERS,
-        'params': {'from_date': current_timestamp},
+        'params': {'from_date': 1},
     }
     try:
         response = requests.get(**request_data)
@@ -172,18 +172,18 @@ def main():
             homework = homeworks[0]
             message = parse_status(homework)
             logging.debug(VERDICT_INFO.format(verdict=message))
-            if (last_message and homework['id'] != last_homework
-               and send_message(bot, last_message)):
-                last_homework = homework['id']
-                current_timestamp = response.get(
-                    'current_date', current_timestamp
-                )
-            elif message != last_message and send_message(bot, message):
+
+            if last_message and homework['id'] != last_homework:
+                message = last_message
+            elif message == last_message:
+                continue
+            if send_message(bot, message):
                 last_message = message
                 last_homework = homework['id']
                 current_timestamp = response.get(
                     'current_date', current_timestamp
                 )
+
         except Exception as error:
             message = BASE_ERROR_MESSAGE.format(error=error)
             logging.error(message)
