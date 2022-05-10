@@ -6,6 +6,7 @@ import time
 
 from dotenv import load_dotenv
 from telegram import Bot
+from pprint import pprint
 import requests
 
 from bot_exceptions import HTTPRequestError, ServiceDeniedError
@@ -28,9 +29,9 @@ VERDICT_INFO = 'Verdict: {verdict}'
 
 BASE_ERROR_MESSAGE = ('An error occured when processing request to API:\n'
                       '{error}')
-BOT_RESPONSE_MESSAGE = 'Received the following response from the bot: {data}'
-BOT_ERROR_MESSAGE = 'An error occured when sending a message to bot: {message}'
-
+BOT_ERROR_MESSAGE = ('An error occured when sending a message to the bot:\n'
+                     '{error}'
+                     'The following message was sent to the bot:\n{message}')
 TYPE_ERROR_MESSAGE = '{obj} is a {type}, when {expected_type} was expected'
 KEY_ERROR_MESSAGE = '{obj} does not have a key {key}'
 NO_VERDICT_MESSAGE = 'Received unrecognized status: {status}'
@@ -60,16 +61,16 @@ HOMEWORK_VERDICTS = {
 def send_message(bot, message):
     """Send a message to my chat."""
     try:
-        api_response = bot.send_message(
+        bot.send_message(
             chat_id=TELEGRAM_CHAT_ID,
             text=message
         )
     except Exception as error:
-        logging.exception(BOT_ERROR_MESSAGE.format(message=error))
+        logging.exception(
+            BOT_ERROR_MESSAGE.format(error=error, message=message)
+        )
         return False
-    else:
-        logging.info(BOT_RESPONSE_MESSAGE.format(data=api_response))
-        return True
+    return True
 
 
 def get_api_answer(current_timestamp):
@@ -77,7 +78,7 @@ def get_api_answer(current_timestamp):
     request_data = {
         'url': ENDPOINT,
         'headers': HEADERS,
-        'params': {'from_date': current_timestamp},
+        'params': {'from_date': 1},
     }
     try:
         response = requests.get(**request_data)
@@ -158,7 +159,8 @@ def main():
     if not check_tokens():
         raise NameError(TOKENS_MISSING_MESSAGE)
     bot = Bot(token=TELEGRAM_TOKEN)
-    last_message = ''
+    last_message = None
+    last_homework = None
     current_timestamp = int(time.time())
 
     while True:
@@ -168,19 +170,26 @@ def main():
             homeworks = check_response(response)
             if not homeworks:
                 continue
-            message = parse_status(homeworks[0])
+            homework = homeworks[0]
+            message = parse_status(homework)
             logging.debug(VERDICT_INFO.format(verdict=message))
-        except Exception as error:
-            message = BASE_ERROR_MESSAGE.format(error=error)
-            if message != last_message and send_message(bot, message):
-                logging.error(message)
-                last_message = message
-        else:
-            if message != last_message and send_message(bot, message):
-                last_message = message
+            if (last_message and homework['id'] != last_homework
+               and send_message(bot, last_message)):
+                last_homework = homework['id']
                 current_timestamp = response.get(
                     'current_date', current_timestamp
                 )
+            elif message != last_message and send_message(bot, message):
+                last_message = message
+                last_homework = homework['id']
+                current_timestamp = response.get(
+                    'current_date', current_timestamp
+                )
+        except Exception as error:
+            message = BASE_ERROR_MESSAGE.format(error=error)
+            logging.error(message)
+            if message != last_message and send_message(bot, message):
+                last_message = message
         finally:
             time.sleep(RETRY_TIME)
 
