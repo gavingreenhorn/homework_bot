@@ -77,7 +77,7 @@ def get_api_answer(current_timestamp):
     request_data = {
         'url': ENDPOINT,
         'headers': HEADERS,
-        'params': {'from_date': 1},
+        'params': {'from_date': current_timestamp},
     }
     try:
         response = requests.get(**request_data)
