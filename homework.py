@@ -6,7 +6,6 @@ import time
 
 from dotenv import load_dotenv
 from telegram import Bot
-from pprint import pprint
 import requests
 
 from bot_exceptions import HTTPRequestError, ServiceDeniedError
