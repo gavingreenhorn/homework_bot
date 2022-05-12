@@ -48,7 +48,7 @@ HTTP_DENIED_MESSAGE = ('The server refused to provide requested data:\n'
                        'Code: [{code}]\n'
                        'Errors: {errors}\n'
                        'The following requst was sent:\n'
-                       'url: {url}\nheaders: {headers}\nparams: {params}')
+                       'url: {url}\nheaders: {headers}\nparams: {params}') 
 
 HOMEWORK_VERDICTS = {
     'approved': 'Работа проверена: ревьюеру всё понравилось. Ура!',
